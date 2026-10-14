@@ -54,12 +54,12 @@ export const VISEME_POSE: Record<Viseme, Float32Array> = {
  */
 export const DOMINANCE: Record<Viseme, { a: number; th: number }> = {
   sil: { a: 0.6, th: 14 },
-  PP: { a: 1.0, th: 22 },
-  FF: { a: 0.95, th: 20 },
+  PP: { a: 3.2, th: 42 },
+  FF: { a: 2.6, th: 38 },
   TH: { a: 0.6, th: 18 },
   DD: { a: 0.35, th: 16 },
   kk: { a: 0.3, th: 16 },
-  CH: { a: 0.75, th: 16 },
+  CH: { a: 1.2, th: 18 },
   SS: { a: 0.55, th: 18 },
   nn: { a: 0.35, th: 16 },
   RR: { a: 0.45, th: 16 },

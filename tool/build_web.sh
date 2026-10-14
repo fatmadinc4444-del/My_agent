@@ -19,7 +19,7 @@ fi
 rm -rf "$DEST"
 mkdir -p "$DEST/assets"
 cp -R dist/. "$DEST/"
-mkdir -p "$DEST/assets"
-touch "$DEST/assets/.gitkeep"
+mkdir -p "$DEST/assets" "$DEST/basis"
+touch "$DEST/assets/.gitkeep" "$DEST/basis/.gitkeep"
 
 echo "Avatar bundle copied to $DEST"

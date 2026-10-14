@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { L } from './layout';
 import { phoneScreen } from './textures';
-import { HAND_X, HAND_Y, HAND_Z } from '../character/skeletonDef';
+import { getSpec } from '../rig/spec';
 import { damper } from '../math/spring';
 
 /**
@@ -35,13 +35,12 @@ export class Prop {
   }
 }
 
-const v = (a: number[]) => new THREE.Vector3(a[0], a[1], a[2]);
-
 /** Socket rotation for a phone held in the LEFT palm, screen facing away from the palm. */
 export function phoneSocketL(): { pos: THREE.Vector3; quat: THREE.Quaternion } {
-  const X = v(HAND_X);
-  const Y = v(HAND_Y);
-  const Z = v(HAND_Z);
+  const S = getSpec();
+  const X = S.handX.clone();
+  const Y = S.handY.clone();
+  const Z = S.handZ.clone();
   const m = new THREE.Matrix4().makeBasis(Z.clone().negate(), X.clone(), Y.clone().negate());
   const quat = new THREE.Quaternion().setFromRotationMatrix(m);
   const pos = X.clone().multiplyScalar(0.075).addScaledVector(Y, -0.026).addScaledVector(Z, -0.004);

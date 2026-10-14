@@ -20,3 +20,4 @@ flutter:
   assets:
     - assets/avatar/
     - assets/avatar/assets/
+    - assets/avatar/basis/

@@ -7,13 +7,23 @@ import { EYE_L_CENTER, EYE_R_CENTER } from './headShape';
 import { buildBrow, buildEar, buildTeeth, buildTongue } from './faceParts';
 import { buildHair, createHairMaterial, HairSim } from './hair';
 import { createCharacterMaterials, type CharacterMaterials } from './materials';
+import type { FaceFrame } from '../rig/faceRig';
+import type { Avatar } from '../rig/avatar';
+import { proceduralSpec } from '../rig/spec';
 
 /**
  * Assembles the procedural character: skeleton, skinned body, head with
  * morph targets, eyes, mouth interior, brows, hair. Exposes the handles the
  * animation and face systems drive.
  */
-export class Character {
+export class Character implements Avatar {
+  readonly spec = proceduralSpec();
+  get hitTarget() {
+    return this.headLocal;
+  }
+  setKeyLight(p: THREE.Vector3) {
+    this.hairMat.userData.u.uKeyPos.value.copy(p);
+  }
   readonly root = new THREE.Group();
   readonly bones: Record<string, THREE.Bone> = {};
   readonly boneList: THREE.Bone[] = [];
@@ -28,6 +38,10 @@ export class Character {
   readonly hairSim: HairSim;
   readonly hairMat: THREE.MeshStandardMaterial;
   private morphIndex: Record<string, number> = {};
+  get gazeFrame() {
+    return this.headLocal;
+  }
+  readonly eyeOffset = new THREE.Vector3(0, 0.012, 0.09);
   private tmpM3 = new THREE.Matrix3();
   private tmpM4 = new THREE.Matrix4();
 
@@ -142,6 +156,34 @@ export class Character {
     const inf = this.tongue.morphTargetInfluences!;
     inf[0] = up;
     inf[1] = out;
+  }
+
+  applyFace(F: FaceFrame) {
+    this.setMorph('mouthSmile', F.smile);
+    this.setMorph('mouthFrown', F.frown);
+    this.setMorph('mouthStretch', F.stretch);
+    this.setMorph('mouthFunnel', F.funnel);
+    this.setMorph('mouthPucker', F.pucker);
+    this.setMorph('mouthUpperUp', F.upperUp);
+    this.setMorph('mouthLowerDown', F.lowerDown);
+    this.setMorph('mouthRollLower', F.rollLower);
+    this.setMorph('mouthPress', F.press);
+    this.bones['jaw'].rotation.x = F.jaw;
+    this.setTongue(F.tongueUp, F.tongueOut);
+    this.setBrows(0, F.browUp[0], F.browInner, F.browDown[0]);
+    this.setBrows(1, F.browUp[1], F.browInner, F.browDown[1]);
+    // lids: follow the gaze vertically, squint/wide/sad offsets, then blink
+    const e0 = this.eyes[0];
+    const pitch = F.gazePitch;
+    const upperBase = e0.upperOpen + F.lidDown * 0.35 - F.wide * 0.25 + Math.max(0, -pitch) * 0.55 - Math.max(0, pitch) * 0.25 + F.squint * 0.1;
+    const lowerBase = e0.lowerOpen - F.squint * 0.28 - F.cheek * 0.08 + Math.max(0, pitch) * 0.15;
+    const closedU = (lowerBase + 1.9) / 2 + 0.05;
+    const up = upperBase + (closedU - upperBase) * F.blink;
+    const lo = lowerBase - (lowerBase - closedU) * F.blink * 0.25;
+    for (const e of this.eyes) {
+      e.setLids(up, lo);
+      e.setGaze(F.gazeYaw, pitch);
+    }
   }
 
   /** After bones are posed: hair dynamics + eye lid occlusion frames. */

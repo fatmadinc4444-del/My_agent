@@ -71,6 +71,60 @@ export interface Room {
 
 export const SASH_MAX = 1.05; // radians
 
+/** Desk-lamp lighting: shadowed key spot, warm spill, additive bulb glow. */
+export function createLampLights(group: THREE.Object3D, bulbPos: THREE.Vector3, shadeDir: THREE.Vector3) {
+  const glowTex = (() => {
+    const c = document.createElement('canvas');
+    c.width = c.height = 64;
+    const g = c.getContext('2d')!;
+    const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gr.addColorStop(0, 'rgba(255,220,160,1)');
+    gr.addColorStop(0.25, 'rgba(255,190,120,0.35)');
+    gr.addColorStop(1, 'rgba(255,170,90,0)');
+    g.fillStyle = gr;
+    g.fillRect(0, 0, 64, 64);
+    return new THREE.CanvasTexture(c);
+  })();
+  const bulbGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.55 }));
+  bulbGlow.scale.setScalar(0.5);
+  bulbGlow.position.copy(bulbPos).addScaledVector(shadeDir, 0.03);
+  group.add(bulbGlow);
+
+  const lampSpot = new THREE.SpotLight(0xffc98a, 6, 7, 1.05, 0.9, 1.6);
+  lampSpot.position.copy(bulbPos);
+  lampSpot.target.position.set(0.05, 0.85, -0.3);
+  lampSpot.castShadow = true;
+  lampSpot.shadow.mapSize.set(1024, 1024);
+  lampSpot.shadow.camera.near = 0.05;
+  lampSpot.shadow.camera.far = 5;
+  lampSpot.shadow.bias = -0.0004;
+  lampSpot.shadow.normalBias = 0.015;
+  lampSpot.shadow.radius = 3;
+  group.add(lampSpot, lampSpot.target);
+  const lampPoint = new THREE.PointLight(0xffb070, 1.6, 6, 1.5);
+  lampPoint.position.copy(bulbPos).add(new THREE.Vector3(0, 0.08, 0));
+  group.add(lampPoint);
+
+  return { lampSpot, lampPoint, bulbGlow };
+}
+
+/** Window moonlight, ambient and the cinematic face key. */
+export function createGlobalLights(group: THREE.Object3D) {
+  const moon = new THREE.DirectionalLight(0x8c78ff, 0.9);
+  moon.position.set(1.2, 2.6, -3.2);
+  moon.target.position.set(0.2, 0.9, 0);
+  group.add(moon, moon.target);
+  const hemi = new THREE.HemisphereLight(0x4a3a7a, 0x2a1a12, 0.55);
+  group.add(hemi);
+  // cinematic "face key": soft warm light motivated by the lamp, no shadows,
+  // aimed at the character's head so the face always reads well
+  const faceKey = new THREE.SpotLight(0xffc896, 2.2, 4, 0.55, 1.0, 1.2);
+  faceKey.position.set(-0.6, 1.62, 0.55);
+  faceKey.target.position.set(L.chair.x, 1.5, L.chair.z);
+  group.add(faceKey, faceKey.target);
+  return { moon, hemi, faceKey };
+}
+
 export function buildRoom(): Room {
   const group = new THREE.Group();
   group.name = 'room';
@@ -298,37 +352,7 @@ export function buildRoom(): Room {
   const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.026, 16, 12), new THREE.MeshBasicMaterial({ color: new THREE.Color(4, 3, 1.8) }));
   bulb.position.copy(bulbPos);
   group.add(bulb);
-  const glowTex = (() => {
-    const c = document.createElement('canvas');
-    c.width = c.height = 64;
-    const g = c.getContext('2d')!;
-    const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
-    gr.addColorStop(0, 'rgba(255,220,160,1)');
-    gr.addColorStop(0.25, 'rgba(255,190,120,0.35)');
-    gr.addColorStop(1, 'rgba(255,170,90,0)');
-    g.fillStyle = gr;
-    g.fillRect(0, 0, 64, 64);
-    return new THREE.CanvasTexture(c);
-  })();
-  const bulbGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.55 }));
-  bulbGlow.scale.setScalar(0.5);
-  bulbGlow.position.copy(bulbPos).addScaledVector(shadeDir, 0.03);
-  group.add(bulbGlow);
-
-  const lampSpot = new THREE.SpotLight(0xffc98a, 6, 7, 1.05, 0.9, 1.6);
-  lampSpot.position.copy(bulbPos);
-  lampSpot.target.position.set(0.05, 0.85, -0.3);
-  lampSpot.castShadow = true;
-  lampSpot.shadow.mapSize.set(1024, 1024);
-  lampSpot.shadow.camera.near = 0.05;
-  lampSpot.shadow.camera.far = 5;
-  lampSpot.shadow.bias = -0.0004;
-  lampSpot.shadow.normalBias = 0.015;
-  lampSpot.shadow.radius = 3;
-  group.add(lampSpot, lampSpot.target);
-  const lampPoint = new THREE.PointLight(0xffb070, 1.6, 6, 1.5);
-  lampPoint.position.copy(bulbPos).add(new THREE.Vector3(0, 0.08, 0));
-  group.add(lampPoint);
+  const { lampSpot, lampPoint, bulbGlow } = createLampLights(group, bulbPos, shadeDir);
 
   // ---------- laptop
   const lt = L.laptop;
@@ -511,19 +535,7 @@ export function buildRoom(): Room {
 
   B.flush(group);
 
-  // ---------- global lights
-  const moon = new THREE.DirectionalLight(0x8c78ff, 0.9);
-  moon.position.set(1.2, 2.6, -3.2);
-  moon.target.position.set(0.2, 0.9, 0);
-  group.add(moon, moon.target);
-  const hemi = new THREE.HemisphereLight(0x4a3a7a, 0x2a1a12, 0.55);
-  group.add(hemi);
-  // cinematic "face key": soft warm light motivated by the lamp, no shadows,
-  // aimed at the character's head so the face always reads well
-  const faceKey = new THREE.SpotLight(0xffc896, 2.2, 4, 0.55, 1.0, 1.2);
-  faceKey.position.set(-0.6, 1.62, 0.55);
-  faceKey.target.position.set(0.0, 1.5, -0.62);
-  group.add(faceKey, faceKey.target);
+  const { moon, hemi } = createGlobalLights(group);
 
   const update = (_dt: number, time: number, wind: THREE.Vector3) => {
     (city.material as THREE.ShaderMaterial).uniforms.uTime.value = time;

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import type { Character } from '../character/character';
+import type { FaceRig } from '../rig/faceRig';
+import { emptyFaceFrame } from '../rig/faceRig';
 import type { ConvoState, Emotion } from '../anim/ctx';
 import { MC, MC_SIZE } from './visemes';
 import { Spring1, halflifeToDamping, fastNegExp } from '../math/spring';
@@ -46,7 +47,9 @@ export class FaceController {
   private tmp = new THREE.Vector3();
   private tmpM = new THREE.Matrix4();
 
-  constructor(private ch: Character, private rand: () => number) {
+  readonly frame = emptyFaceFrame();
+
+  constructor(private rig: FaceRig, private rand: () => number) {
     for (const k of KEYS) this.emo[k] = new Spring1(0, 0.25);
   }
 
@@ -66,7 +69,6 @@ export class FaceController {
       eyesShut?: number;
     },
   ) {
-    const ch = this.ch;
     // ---------- emotion springs
     const target = EMO[o.emotion] ?? EMO.neutral;
     const amt = o.emotion === 'neutral' ? 1 : o.emotionAmt;
@@ -87,19 +89,21 @@ export class FaceController {
       this.mouthV[k] = eydt * (this.mouthV[k] - j1 * y * dt);
     }
     const m = this.mouth;
+    const F = this.frame;
     const round = Math.min(1, m[MC.funnel] + m[MC.pucker]);
-    const smile = E('smile') * (1 - 0.6 * round) * (o.speaking ? 0.7 : 1) + m[MC.smile];
-    ch.setMorph('mouthSmile', smile);
-    ch.setMorph('mouthFrown', E('frown') * (1 - 0.5 * round));
-    ch.setMorph('mouthStretch', m[MC.stretch]);
-    ch.setMorph('mouthFunnel', Math.min(1, m[MC.funnel] + E('funnel')));
-    ch.setMorph('mouthPucker', m[MC.pucker]);
-    ch.setMorph('mouthUpperUp', Math.min(1, m[MC.upperUp] + E('upperUp')));
-    ch.setMorph('mouthLowerDown', m[MC.lowerDown]);
-    ch.setMorph('mouthRollLower', m[MC.rollLower]);
-    ch.setMorph('mouthPress', Math.min(1, m[MC.press] + E('press') * (o.speaking ? 0.2 : 1)));
-    ch.bones['jaw'].rotation.x = Math.max(0, m[MC.jaw] + E('jaw'));
-    ch.setTongue(m[MC.tongueUp], m[MC.tongueOut]);
+    F.smile = Math.min(1, E('smile') * (1 - 0.6 * round) * (o.speaking ? 0.7 : 1) + m[MC.smile]);
+    F.frown = E('frown') * (1 - 0.5 * round);
+    F.stretch = m[MC.stretch];
+    F.funnel = Math.min(1, m[MC.funnel] + E('funnel'));
+    F.pucker = m[MC.pucker];
+    F.upperUp = Math.min(1, m[MC.upperUp] + E('upperUp'));
+    F.lowerDown = m[MC.lowerDown];
+    F.rollLower = m[MC.rollLower];
+    F.press = Math.min(1, m[MC.press] + E('press') * (o.speaking ? 0.2 : 1));
+    F.cheek = E('cheek');
+    F.jaw = Math.max(0, m[MC.jaw] + E('jaw'));
+    F.tongueUp = m[MC.tongueUp];
+    F.tongueOut = m[MC.tongueOut];
 
     // ---------- brows: emotion + emphasis pulses on speech beats
     if (o.beat !== this.lastBeat) {
@@ -108,8 +112,11 @@ export class FaceController {
     }
     const pulse = Math.max(0, this.browPulse.update(0, dt));
     const listenLift = o.convo === 'listening' ? 0.15 : 0;
-    ch.setBrows(0, E('browUp') + pulse + listenLift, E('browInner'), E('browDownL'));
-    ch.setBrows(1, E('browUp') + pulse + listenLift + E('browUpR'), E('browInner'), 0);
+    F.browUp[0] = E('browUp') + pulse + listenLift;
+    F.browUp[1] = E('browUp') + pulse + listenLift + E('browUpR');
+    F.browInner = E('browInner');
+    F.browDown[0] = E('browDownL');
+    F.browDown[1] = 0;
 
     // ---------- blinks
     this.blinkT += dt;
@@ -127,20 +134,13 @@ export class FaceController {
 
     // ---------- gaze (in head space)
     this.updateGaze(dt, o.gazeTarget, o.lookingAtUser, o.speaking);
-    const yaw = this.gaze.x;
-    const pitch = this.gaze.y;
-    // lid-follows-gaze, squint, sadness, surprise
-    const e0 = ch.eyes[0];
-    const upperBase = e0.upperOpen + E('lidDown') * 0.35 - E('lidWide') * 0.25 + Math.max(0, -pitch) * 0.55 - Math.max(0, pitch) * 0.25;
-    const lowerBase = e0.lowerOpen - E('squint') * 0.28 - E('cheek') * 0.08 + Math.max(0, pitch) * 0.15;
-    const closedU = (lowerBase + 1.9) / 2 + 0.05;
-    const shut = Math.max(this.blink, o.eyesShut ?? 0);
-    const up = upperBase + (closedU - upperBase) * shut;
-    const lo = lowerBase - (lowerBase - closedU) * shut * 0.25;
-    for (const e of ch.eyes) {
-      e.setLids(up, lo);
-      e.setGaze(yaw, pitch);
-    }
+    F.gazeYaw = this.gaze.x;
+    F.gazePitch = this.gaze.y;
+    F.blink = Math.max(this.blink, o.eyesShut ?? 0);
+    F.squint = E('squint');
+    F.wide = E('lidWide');
+    F.lidDown = E('lidDown');
+    this.rig.applyFace(F);
   }
 
   private startBlink() {
@@ -151,11 +151,9 @@ export class FaceController {
 
   private updateGaze(dt: number, target: THREE.Vector3, atUser: boolean, speaking: boolean) {
     // target direction in head (local) space; eyes are ~3cm in front of the head centre
-    const hl = this.ch.headLocal;
+    const hl = this.rig.gazeFrame;
     this.tmpM.copy(hl.matrixWorld).invert();
-    const p = this.tmp.copy(target).applyMatrix4(this.tmpM);
-    p.y -= 0.012;
-    p.z -= 0.09;
+    const p = this.tmp.copy(target).applyMatrix4(this.tmpM).sub(this.rig.eyeOffset);
     let yaw = Math.atan2(p.x, p.z);
     let pitch = Math.atan2(p.y, Math.hypot(p.x, p.z));
     // micro-saccades / face scanning

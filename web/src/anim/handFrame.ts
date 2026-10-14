@@ -1,23 +1,25 @@
 import * as THREE from 'three';
-import { HAND_X, HAND_Y, HAND_Z } from '../character/skeletonDef';
+import { getSpec, onSpecChange } from '../rig/spec';
 
 /**
  * Authoring helper: "hand with fingers pointing along F, palm facing P".
  * Returns the world rotation (relative to bind, which is identity) for the
  * left or right hand. Directions are given in the same space as the result.
  */
-const bindL = new THREE.Matrix4().makeBasis(
-  new THREE.Vector3(...HAND_X),
-  new THREE.Vector3(...HAND_Y).negate(), // palm normal
-  new THREE.Vector3(...HAND_Z),
-);
-const bindR = new THREE.Matrix4().makeBasis(
-  new THREE.Vector3(-HAND_X[0], HAND_X[1], HAND_X[2]),
-  new THREE.Vector3(-HAND_Y[0], HAND_Y[1], HAND_Y[2]).negate(),
-  new THREE.Vector3(-HAND_Z[0], HAND_Z[1], HAND_Z[2]),
-);
-const bindLInv = bindL.clone().transpose();
-const bindRInv = bindR.clone().transpose();
+const bindL = new THREE.Matrix4();
+const bindR = new THREE.Matrix4();
+const bindLInv = new THREE.Matrix4();
+const bindRInv = new THREE.Matrix4();
+function rebuild() {
+  const S = getSpec();
+  const mir = (v: THREE.Vector3) => new THREE.Vector3(-v.x, v.y, v.z);
+  bindL.makeBasis(S.handX, S.handY.clone().negate(), S.handZ);
+  bindR.makeBasis(mir(S.handX), mir(S.handY).negate(), mir(S.handZ));
+  bindLInv.copy(bindL).transpose();
+  bindRInv.copy(bindR).transpose();
+}
+rebuild();
+onSpecChange(rebuild);
 const m = new THREE.Matrix4();
 const f = new THREE.Vector3();
 const p = new THREE.Vector3();

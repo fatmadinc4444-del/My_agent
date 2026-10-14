@@ -1,7 +1,10 @@
 import * as THREE from 'three';
 import { C } from './controls';
-import type { Character } from '../character/character';
-import { BONE_DEFS, BONE_INDEX, FINGERS, FINGER_LAYOUT, HAND_X, HAND_Y, HAND_Z } from '../character/skeletonDef';
+export interface Posable {
+  bones: Record<string, THREE.Bone>;
+}
+import { FINGERS } from '../character/skeletonDef';
+import { getSpec } from '../rig/spec';
 
 /**
  * Control vector -> skeleton.
@@ -13,7 +16,7 @@ import { BONE_DEFS, BONE_INDEX, FINGERS, FINGER_LAYOUT, HAND_X, HAND_Y, HAND_Z }
  * Allocation free per frame.
  */
 
-const bindPos = (n: string) => new THREE.Vector3(...BONE_DEFS[BONE_INDEX[n]].pos);
+const bindPos = (n: string) => getSpec().pos[n].clone();
 
 interface Limb {
   a: THREE.Bone;
@@ -26,7 +29,7 @@ interface Limb {
   restFrame: THREE.Matrix4; // inverse of bind frame
 }
 
-function makeLimb(ch: Character, a: string, b: string, c: string, fold: THREE.Vector3): Limb {
+function makeLimb(ch: Posable, a: string, b: string, c: string, fold: THREE.Vector3): Limb {
   const pa = bindPos(a);
   const pb = bindPos(b);
   const pc = bindPos(c);
@@ -79,21 +82,24 @@ export class PoseSolver {
   private rootQ = new THREE.Quaternion();
   /** world-space positions of the hands, for props/IK users */
   readonly handWorld = { L: new THREE.Vector3(), R: new THREE.Vector3() };
+  /** optional stylisation: shorten the neck (metres, negative = shorter) */
+  neckOffset = 0;
+  private neckRestY: number;
 
-  constructor(private ch: Character) {
+  constructor(private ch: Posable) {
+    this.neckRestY = ch.bones['neck'].position.y;
     this.armL = makeLimb(ch, 'upperArm.L', 'foreArm.L', 'hand.L', new THREE.Vector3(0, 0, 1));
     this.armR = makeLimb(ch, 'upperArm.R', 'foreArm.R', 'hand.R', new THREE.Vector3(0, 0, 1));
     this.legL = makeLimb(ch, 'thigh.L', 'shin.L', 'foot.L', new THREE.Vector3(0, 0, -1));
     this.legR = makeLimb(ch, 'thigh.R', 'shin.R', 'foot.R', new THREE.Vector3(0, 0, -1));
     for (const s of ['L', 'R'] as const) {
       const m = s === 'L' ? 1 : -1;
-      const hz = new THREE.Vector3(HAND_Z[0] * m, HAND_Z[1], HAND_Z[2]);
-      const hy = new THREE.Vector3(HAND_Y[0] * m, HAND_Y[1], HAND_Y[2]);
-      const hx = new THREE.Vector3(HAND_X[0] * m, HAND_X[1], HAND_X[2]);
+      const S = getSpec();
+      const hz = new THREE.Vector3(S.handZ.x * m, S.handZ.y, S.handZ.z);
+      const hy = new THREE.Vector3(S.handY.x * m, S.handY.y, S.handY.z);
       for (const f of FINGERS) {
         if (f === 'thumb') {
-          const d = new THREE.Vector3(...FINGER_LAYOUT.thumb.dir);
-          const td = hx.clone().multiplyScalar(d.x).addScaledVector(hy, d.y).addScaledVector(hz, d.z).normalize();
+          const td = new THREE.Vector3(S.thumbDir.x * m, S.thumbDir.y, S.thumbDir.z);
           // thumb flexes across the palm
           const flex = new THREE.Vector3().crossVectors(td, hy.clone().negate()).normalize().multiplyScalar(-m);
           this.fingerAxes[`thumb.${s}`] = { flex, spread: hy.clone().multiplyScalar(m) };
@@ -123,8 +129,7 @@ export class PoseSolver {
     B['shoulder.L'].quaternion.setFromAxisAngle(_v1.set(0, 0, 1), c[C.shrug]);
     B['shoulder.R'].quaternion.setFromAxisAngle(_v1.set(0, 0, 1), -c[C.shrug + 1]);
     B['neck'].quaternion.identity();
-    // slightly shorter neck than the bind pose (stylised proportions)
-    B['neck'].position.y = 0.215 - 0.022;
+    if (this.neckOffset) B['neck'].position.y = this.neckRestY + this.neckOffset;
     B['head'].quaternion.identity();
     root.updateMatrixWorld(true);
     this.rootM.copy(root.matrixWorld);

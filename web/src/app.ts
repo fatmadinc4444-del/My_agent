@@ -1,5 +1,8 @@
 import * as THREE from 'three';
 import { Character } from './character/character';
+import { GltfAvatar } from './rig/gltfAvatar';
+import type { Avatar } from './rig/avatar';
+import { setSpec } from './rig/spec';
 import { PoseSolver } from './anim/solver';
 import { AnimGraph, type Behavior } from './anim/graph';
 import { Seated } from './anim/behaviors/seated';
@@ -8,7 +11,8 @@ import { LifeLayer } from './anim/life';
 import { C } from './anim/controls';
 import type { Ctx, Emotion } from './anim/ctx';
 import type { World } from './anim/world';
-import { buildRoom } from './scene/room';
+import { buildRoom, type Room } from './scene/room';
+import { loadRoomGltf } from './scene/roomGltf';
 import { L } from './scene/layout';
 import { Wind } from './scene/wind';
 import { createEnvironment } from './scene/environment';
@@ -21,6 +25,44 @@ import { Bridge, type Command } from './core/bridge';
 import { QualityGovernor, type Tier } from './core/quality';
 import { rng } from './math/noise';
 import { Spring1, damper, smoothstep } from './math/spring';
+
+/**
+ * Artist character if available (`?character=url` or assets/character.glb),
+ * otherwise the procedural stand-in.
+ */
+async function createAvatar(url: string | null, renderer: THREE.WebGLRenderer): Promise<Avatar> {
+  const candidates = url ? [url] : ['assets/character.glb'];
+  for (const u of candidates) {
+    try {
+      if (!url) {
+        const head = await fetch(u, { method: 'HEAD' });
+        if (!head.ok || !(head.headers.get('content-type') ?? '').match(/gltf|octet|model/)) continue;
+      }
+      const a = await GltfAvatar.load(u, renderer);
+      console.info(`[avatar] loaded ${u}`);
+      return a;
+    } catch (e) {
+      console.warn(`[avatar] could not use ${u}:`, e);
+    }
+  }
+  return new Character();
+}
+
+async function createRoom(url: string | null, renderer: THREE.WebGLRenderer): Promise<Room> {
+  const u = url ?? 'assets/room.glb';
+  try {
+    if (!url) {
+      const head = await fetch(u, { method: 'HEAD' });
+      if (!head.ok || !(head.headers.get('content-type') ?? '').match(/gltf|octet|model/)) return buildRoom();
+    }
+    const r = await loadRoomGltf(u, renderer);
+    console.info(`[room] loaded ${u}`);
+    return r;
+  } catch (e) {
+    console.warn(`[room] could not use ${u}:`, e);
+    return buildRoom();
+  }
+}
 
 type ActionName = 'openWindow' | 'closeWindow' | 'callCat' | 'pickPhone' | 'putPhone' | 'playGuitar' | 'stopGuitar' | 'wave' | 'stretch' | 'walk';
 
@@ -43,11 +85,12 @@ export async function start() {
   scene.environmentIntensity = 0.45;
 
   // ---------------------------------------------------------------- world
-  const room = buildRoom();
+  const room = await createRoom(params.get('room'), renderer);
   scene.add(room.group);
-  const ch = new Character();
+  const ch = await createAvatar(params.get('character'), renderer);
+  setSpec(ch.spec);
   scene.add(ch.root);
-  ch.hairMat.userData.u.uKeyPos.value.copy(room.lampSpot.position);
+  ch.setKeyLight?.(room.lampSpot.position);
   const cat = new Cat();
   scene.add(cat.root);
   const phone = new Prop(buildPhone());
@@ -120,6 +163,7 @@ export async function start() {
 
   // ---------------------------------------------------------------- animation
   const solver = new PoseSolver(ch);
+  if (ch instanceof Character) solver.neckOffset = -0.022;
   const graph = new AnimGraph<Ctx>();
   const life = new LifeLayer();
   const wind = new Wind();
@@ -290,7 +334,7 @@ export async function start() {
       ['phone', phone.obj],
       ['guitar', guitar.obj],
       ['window', room.sash],
-      ['character', ch.headLocal],
+      ['character', ch.hitTarget],
     ];
     let best: { name: string; d: number } | null = null;
     for (const [name, o] of targets) {
