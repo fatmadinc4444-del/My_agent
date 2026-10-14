@@ -1,0 +1,42 @@
+import * as THREE from 'three';
+import { Character } from '../character/character';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+
+export async function run() {
+  const p = new URLSearchParams(location.search);
+  const t0 = performance.now();
+  const ch = new Character();
+  console.log(`character build ${(performance.now() - t0).toFixed(0)}ms`);
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.toneMapping = THREE.AgXToneMapping;
+  renderer.shadowMap.enabled = true;
+  document.getElementById('app')!.appendChild(renderer.domElement);
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x22223a);
+  const pm = new THREE.PMREMGenerator(renderer);
+  scene.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture;
+  scene.environmentIntensity = 0.35;
+  scene.add(ch.root);
+  ch.root.rotation.y = +(p.get('yaw') ?? 0.3);
+  const key = new THREE.SpotLight(0xffd2a0, 30, 6, 0.7, 0.6, 2);
+  key.position.set(-0.9, 1.9, 1.2);
+  key.target.position.set(0, 1.3, 0);
+  key.castShadow = true;
+  scene.add(key, key.target);
+  const rim = new THREE.DirectionalLight(0x8a7cff, 1.2);
+  rim.position.set(1, 1.5, -1.5);
+  scene.add(rim);
+  ch.mats.skin.needsUpdate = true;
+  for (const [k, v] of p.entries()) if (k.startsWith('m_')) ch.setMorph(k.slice(2), +v);
+  ch.bones['jaw'].rotation.x = +(p.get('jaw') ?? 0);
+  const cam = new THREE.PerspectiveCamera(+(p.get('fov') ?? 28), innerWidth / innerHeight, 0.05, 20);
+  const target = new THREE.Vector3(0, +(p.get('ty') ?? 1.1), 0);
+  cam.position.set(0, target.y + 0.05, +(p.get('dist') ?? 2.2));
+  cam.lookAt(target);
+  ch.root.updateMatrixWorld(true);
+  ch.postUpdate(1 / 60, 0, new THREE.Vector3());
+  renderer.render(scene, cam);
+  document.getElementById('fade')!.classList.add('done');
+  (window as any).__shotReady = true;
+}
